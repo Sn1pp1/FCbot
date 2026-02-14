@@ -7,16 +7,18 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiohttp import web
 
-# Настройки
+# --- НАСТРОЙКИ ---
 TOKEN = os.getenv("BOT_TOKEN")
-TRIGGER_PHRASE = "+"
-participants = set()
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
 
-# --- ВЕБ-СЕРВЕР ДЛЯ RENDER (чтобы не было Timed Out) ---
+# Состояние бота
+is_collecting = False
+participants = []
+
+# --- ВЕБ-СЕРВЕР ДЛЯ RENDER (чтобы бот не засыпал) ---
 async def handle(request):
     return web.Response(text="ok")
 
@@ -25,68 +27,98 @@ async def start_web_server():
     app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    # Render дает порт в переменной окружения PORT, если нет - берем 10000
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"Веб-сервер запущен на порту {port}")
 
-# --- ЛОГИКА БОТА ---
-def get_start_keyboard():
+# --- КЛАВИАТУРА (теперь общая для всех) ---
+def get_main_kb():
     builder = ReplyKeyboardBuilder()
-    builder.button(text="🚀 Запустить сбор")
-    return builder.as_markup(resize_keyboard=True)
-
-def get_main_keyboard():
-    builder = ReplyKeyboardBuilder()
-    builder.button(text="+")
+    builder.button(text="➕ Записаться на игру")
     builder.button(text="🛡 Поделить на команды")
-    builder.button(text="♻️ Сброс")
-    builder.adjust(1, 2)
+    builder.button(text="♻️ Сбросить список")
+    builder.button(text="🛑 Остановить сбор (STOP)")
+    
+    builder.adjust(1, 2, 1) 
     return builder.as_markup(resize_keyboard=True)
+
+# --- Функция деления на команды ---
+def get_teams_text():
+    if len(participants) < 2:
+        return "⚠️ Слишком мало людей для деления! (нужно минимум 2)"
+    
+    temp_list = list(participants)
+    random.shuffle(temp_list)
+    
+    mid = len(temp_list) // 2
+    team1 = temp_list[:mid]
+    team2 = temp_list[mid:]
+    
+    res = "⚽️ **РЕЗУЛЬТАТ ЖЕРЕБЬЕВКИ:**\n\n"
+    res += "👕 **КОМАНДА 1:**\n" + "\n".join([f"🔹 {p}" for p in team1])
+    res += "\n\n  ⚡️  **VS** ⚡️  \n\n"
+    res += "👕 **КОМАНДА 2:**\n" + "\n".join([f"🔸 {p}" for p in team2])
+    return res
+
+# --- ЛОГИКА ---
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("Привет! Нажми на кнопку ниже.", reply_markup=get_start_keyboard())
+    global is_collecting, participants
+    is_collecting = True
+    participants = []
+    await message.answer(
+        "🚀 **СБОР НА ИГРУ ОТКРЫТ!**\n\nЛюбой может нажать **➕ Записаться** или просто написать **+** в чат.",
+        reply_markup=get_main_kb(),
+        parse_mode="Markdown"
+    )
 
-@dp.message(F.text == "🚀 Запустить сбор")
-async def open_menu(message: types.Message):
-    await message.answer("Меню открыто!", reply_markup=get_main_keyboard())
-
-@dp.message(F.text == TRIGGER_PHRASE)
-async def register(message: types.Message):
+@dp.message(F.text == "➕ Записаться на игру")
+@dp.message(F.text == "+")
+async def handle_registration(message: types.Message):
+    global is_collecting, participants
+    if not is_collecting:
+        return # Если сбор не запущен, игнорируем плюсы
+    
     user_name = message.from_user.full_name
     if user_name not in participants:
-        participants.add(user_name)
-        await message.reply(f"✅ {user_name} в списке! Всего: {len(participants)}")
+        participants.append(user_name)
+        await message.reply(f"✅ {user_name} в списке! (Всего: {len(participants)})")
     else:
-        await message.reply("Вы уже записаны.")
+        await message.reply("Вы уже записаны!")
 
 @dp.message(F.text == "🛡 Поделить на команды")
-async def divide(message: types.Message):
-    if len(participants) < 2:
-        await message.answer("Нужно минимум 2 человека!")
-        return
-    players = list(participants)
-    random.shuffle(players)
-    mid = len(players) // 2
-    team1, team2 = players[:mid], players[mid:]
-    res = f"⚔️ **КОМАНДА 1:**\n" + "\n".join(team1) + f"\n\n🛡 **КОМАНДА 2:**\n" + "\n".join(team2)
-    await message.answer(res, parse_mode="Markdown")
+async def press_divide(message: types.Message):
+    # Теперь любой может нажать и посмотреть промежуточный итог
+    await message.answer(get_teams_text(), parse_mode="Markdown")
 
-@dp.message(F.text == "♻️ Сброс")
-async def reset(message: types.Message):
-    participants.clear()
-    await message.answer("Список очищен!")
+@dp.message(F.text == "♻️ Сбросить список")
+async def press_reset(message: types.Message):
+    global participants
+    participants = []
+    await message.answer("🗑 Список участников очищен кем-то из игроков!")
+
+@dp.message(F.text == "🛑 Остановить сбор (STOP)")
+@dp.message(Command("stop"))
+async def press_stop(message: types.Message):
+    global is_collecting, participants
+    
+    if is_collecting and len(participants) >= 2:
+        await message.answer("🏁 **ИТОГОВЫЕ СОСТАВЫ:**")
+        await message.answer(get_teams_text(), parse_mode="Markdown")
+    
+    is_collecting = False
+    participants = []
+    await message.answer(
+        "❌ Сбор закрыт. Всем удачной игры!", 
+        reply_markup=types.ReplyKeyboardRemove()
+    )
 
 # --- ЗАПУСК ---
 async def main():
-    # Запускаем "обманку" для Render
     await start_web_server()
-    # Очищаем вебхуки и запускаем бота
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
