@@ -4,7 +4,7 @@ import logging
 import random
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
 
 # --- НАСТРОЙКИ ---
@@ -31,15 +31,16 @@ async def start_web_server():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
-# --- КЛАВИАТУРЫ ---
-def get_main_kb():
-    builder = ReplyKeyboardBuilder()
-    builder.button(text="➕ Записаться на игру")
-    builder.button(text="🛡 Поделить на команды")
-    builder.button(text="♻️ Сбросить список")
-    builder.button(text="🛑 Остановить сбор (STOP)")
-    builder.adjust(1, 2, 1)
-    return builder.as_markup(resize_keyboard=True)
+# --- КЛАВИАТУРЫ (ИНЛАЙН) ---
+
+def get_main_inline_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Записаться", callback_data="reg")
+    builder.button(text="🛡 Поделить", callback_data="ask_limit")
+    builder.button(text="♻️ Сброс", callback_data="reset")
+    builder.button(text="🛑 Стоп", callback_data="stop")
+    builder.adjust(2)
+    return builder.as_markup()
 
 def get_limit_kb():
     builder = InlineKeyboardBuilder()
@@ -50,9 +51,9 @@ def get_limit_kb():
 
 def get_split_kb():
     builder = InlineKeyboardBuilder()
-    builder.button(text="На 2 команды", callback_data="split_2")
-    builder.button(text="На 3 команды", callback_data="split_3")
-    builder.button(text="На 4 команды", callback_data="split_4")
+    builder.button(text="На 2 команды", callback_data="do_split_2")
+    builder.button(text="На 3 команды", callback_data="do_split_3")
+    builder.button(text="На 4 команды", callback_data="do_split_4")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -92,68 +93,78 @@ async def cmd_start(message: types.Message):
     is_collecting = True
     participants = []
     await message.answer(
-        "🚀 **СБОР НА ИГРУ ОТКРЫТ!**\n\nНажимай кнопки или пиши **+**",
-        reply_markup=get_main_kb(),
+        "🚀 **СБОР НА ИГРУ ОТКРЫТ!**\n\nНажимай кнопку ниже или пиши **+** в чат.",
+        reply_markup=get_main_inline_kb(),
         parse_mode="Markdown"
     )
 
-@dp.message(F.text == "➕ Записаться на игру")
+# Обработка кнопки "Записаться" и текстового "+"
+@dp.callback_query(F.data == "reg")
+async def callback_reg(callback: types.CallbackQuery):
+    await handle_reg_logic(callback.message, callback.from_user)
+    await callback.answer()
+
 @dp.message(F.text == "+")
-async def handle_registration(message: types.Message):
+async def message_reg(message: types.Message):
+    await handle_reg_logic(message, message.from_user)
+
+async def handle_reg_logic(message, user):
     global is_collecting, participants
     if not is_collecting: return
     
-    user_name = message.from_user.full_name
+    user_name = user.full_name
     if user_name not in participants:
         participants.append(user_name)
-        await message.reply(f"✅ {user_name} в списке! (Всего: {len(participants)})")
+        await message.answer(f"✅ {user_name} в списке! (Всего: {len(participants)})")
     else:
-        await message.reply("Вы уже в списке!")
+        await message.answer(f"⚠️ {user_name}, ты уже в списке!")
 
-@dp.message(F.text == "🛡 Поделить на команды")
-async def press_divide(message: types.Message):
+# Обработка кнопки "Поделить"
+@dp.callback_query(F.data == "ask_limit")
+async def callback_ask_limit(callback: types.CallbackQuery):
     if len(participants) < 2:
-        await message.answer("⚠️ Нужно минимум 2 человека!")
+        await callback.answer("⚠️ Нужно минимум 2 человека!", show_alert=True)
         return
-    await message.answer("📏 По сколько человек в одной команде?", reply_markup=get_limit_kb())
+    await callback.message.answer("📏 По сколько человек в одной команде?", reply_markup=get_limit_kb())
+    await callback.answer()
 
 @dp.callback_query(F.data.startswith("set_limit_"))
-async def callback_limit(callback: types.CallbackQuery):
+async def callback_set_limit(callback: types.CallbackQuery):
     global temp_limit
     temp_limit = int(callback.data.split("_")[2])
     await callback.message.edit_text(
-        f"🏃 Лимит: {temp_limit} чел/команда\n👥 Всего игроков: {len(participants)}\n\nНа сколько команд делим?",
+        f"🏃 Лимит: {temp_limit} чел/команда\n👥 Игроков: {len(participants)}\n\nНа сколько команд делим?",
         reply_markup=get_split_kb()
     )
 
-@dp.callback_query(F.data.startswith("split_"))
-async def callback_split(callback: types.CallbackQuery):
-    num_teams = int(callback.data.split("_")[1])
+@dp.callback_query(F.data.startswith("do_split_"))
+async def callback_do_split(callback: types.CallbackQuery):
+    num_teams = int(callback.data.split("_")[2])
     result_text = split_logic(num_teams, temp_limit)
     await callback.message.answer(result_text, parse_mode="Markdown")
     await callback.answer()
 
-@dp.message(F.text == "♻️ Сбросить список")
-async def press_reset(message: types.Message):
+# Сброс и Стоп
+@dp.callback_query(F.data == "reset")
+async def callback_reset(callback: types.CallbackQuery):
     global participants
     participants = []
-    await message.answer("🗑 Список очищен!")
+    await callback.message.answer("🗑 Список очищен!")
+    await callback.answer()
 
-@dp.message(F.text == "🛑 Остановить сбор (STOP)")
-@dp.message(Command("stop"))
-async def press_stop(message: types.Message):
+@dp.callback_query(F.data == "stop")
+async def callback_stop(callback: types.CallbackQuery):
     global is_collecting, participants
     is_collecting = False
     participants = []
-    await message.answer("❌ Сбор закрыт!", reply_markup=types.ReplyKeyboardRemove())
+    await callback.message.edit_text("❌ Сбор закрыт! Всем удачи.")
+    await callback.answer()
 
+# --- ЗАПУСК ---
 async def main():
     await start_web_server()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logging.error("Bot stopped!")
+    asyncio.run(main())
