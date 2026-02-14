@@ -5,8 +5,9 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
-TOKEN = "8305924362:AAGtvSHflfwn51wTwtqNw_Kf1v_Rbpp65iQ"
-TRIGGER_PHRASE = "+"
+import os # проверьте, что этот импорт есть в самом верху!
+
+TOKEN = os.getenv("BOT_TOKEN")
 participants = set()
 
 bot = Bot(token=TOKEN)
@@ -85,4 +86,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+
     asyncio.run(main())
