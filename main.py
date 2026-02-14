@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 
 # --- ВЕБ-СЕРВЕР ДЛЯ RENDER (чтобы не было Timed Out) ---
 async def handle(request):
-    return web.Response(text="Бот запущен и работает!")
+    return web.Response(text="ok")
 
 async def start_web_server():
     app = web.Application()
@@ -89,3 +89,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
