@@ -8,6 +8,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 import os # проверьте, что этот импорт есть в самом верху!
 
 TOKEN = os.getenv("BOT_TOKEN")
+TRIGGER_PHRASE = "+"  # <--- ВОТ ЭТУ СТРОКУ НУЖНО ДОБАВИТЬ
 participants = set()
 
 bot = Bot(token=TOKEN)
@@ -88,3 +89,4 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(main())
+
