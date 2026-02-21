@@ -2,6 +2,8 @@ import os
 import asyncio
 import random
 import logging
+from dotenv import load_dotenv
+load_dotenv()
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -167,3 +169,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
