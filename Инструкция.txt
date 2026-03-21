@@ -1,0 +1,173 @@
+================================================================================
+ШАГ 1: ПОДГОТОВКА СЕРВЕРА
+================================================================================
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install python3 python3-pip python3-venv git -y
+
+================================================================================
+ШАГ 2: КЛОНИРОВАНИЕ РЕПОЗИТОРИЯ
+================================================================================
+
+cd /opt
+sudo git clone https://github.com/Sn1pp1/FCbot.git
+sudo chown -R $USER:$USER FCbot
+cd FCbot
+
+================================================================================
+ШАГ 3: СОЗДАНИЕ ВИРТУАЛЬНОГО ОКРУЖЕНИЯ
+================================================================================
+
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+
+================================================================================
+ШАГ 4: УСТАНОВКА ЗАВИСИМОСТЕЙ
+================================================================================
+
+pip install -r requirements.txt
+pip install python-dotenv
+pip list | grep -i dotenv
+
+# Если python-dotenv нет в requirements.txt:
+echo "python-dotenv" >> requirements.txt
+
+================================================================================
+ШАГ 5: НАСТРОЙКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
+================================================================================
+
+nano .env
+
+# Добавьте содержимое:
+BOT_TOKEN=ваш_токен_от_botfather
+
+# Сохраните: Ctrl+O, Enter, Ctrl+X
+
+================================================================================
+ШАГ 6: ПРОВЕРКА ЗАПУСКА
+================================================================================
+
+source venv/bin/activate
+python main.py
+
+# Если видите "Start polling" - нажмите Ctrl+C
+
+================================================================================
+ШАГ 7: СОЗДАНИЕ SYSTEMD СЕРВИСА
+================================================================================
+
+sudo nano /etc/systemd/system/fcbot.service
+
+# Вставьте:
+
+[Unit]
+Description=FCbot Telegram Bot
+After=network.target
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/FCbot
+Environment="PATH=/opt/FCbot/venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/FCbot/venv/bin/python /opt/FCbot/main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+# Сохраните: Ctrl+O, Enter, Ctrl+X
+
+================================================================================
+ШАГ 8: АКТИВАЦИЯ И ЗАПУСК
+================================================================================
+
+sudo systemctl daemon-reload
+sudo systemctl enable fcbot
+sudo systemctl start fcbot
+sudo systemctl status fcbot
+
+# Должно быть: Active: active (running)
+
+================================================================================
+ШАГ 9: ПРОСМОТР ЛОГОВ
+================================================================================
+
+# Логи в реальном времени:
+sudo journalctl -u fcbot -f
+
+# Последние 50 строк:
+sudo journalctl -u fcbot --no-pager -n 50
+
+================================================================================
+УПРАВЛЕНИЕ БОТОМ
+================================================================================
+
+# Остановить:
+sudo systemctl stop fcbot
+
+# Перезапустить:
+sudo systemctl restart fcbot
+
+# Статус:
+sudo systemctl status fcbot
+
+# Отключить автозапуск:
+sudo systemctl disable fcbot
+
+================================================================================
+ОБНОВЛЕНИЕ БОТА
+================================================================================
+
+cd /opt/FCbot
+source venv/bin/activate
+git pull
+pip install -r requirements.txt
+sudo systemctl restart fcbot
+sudo journalctl -u fcbot -f --no-pager -n 20
+
+================================================================================
+РЕШЕНИЕ ПРОБЛЕМ
+================================================================================
+
+ОШИБКА: ModuleNotFoundError: No module named 'dotEnv'
+
+source /opt/FCbot/venv/bin/activate
+pip install python-dotenv
+echo "python-dotenv" >> /opt/FCbot/requirements.txt
+sudo systemctl restart fcbot
+
+---
+
+БОТ НЕ ЗАПУСКАЕТСЯ:
+
+sudo journalctl -u fcbot -f --no-pager -n 50
+sudo systemctl status fcbot
+ls -la /opt/FCbot/.env
+cat /opt/FCbot/.env
+
+---
+
+БОТ ПАДАЕТ С ОШИБКОЙ:
+
+sudo journalctl -u fcbot --no-pager -n 100
+cd /opt/FCbot
+source venv/bin/activate
+python main.py
+
+================================================================================
+ПРОВЕРКА РАБОТЫ
+================================================================================
+
+1. Откройте Telegram
+2. Найдите своего бота
+3. Отправьте /start
+4. Бот должен ответить
+
+================================================================================
+                         УДАЧИ В ДЕПЛОЕ! 🚀
+================================================================================
